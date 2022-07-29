@@ -1,0 +1,209 @@
+#ifndef ROS_PATHTRACKING_H
+#define ROS_PATHTRACKING_H
+
+#include "ros/ros.h" 
+#include "tf/transform_broadcaster.h"
+#include "tf/transform_listener.h"
+#include <serial/serial.h>
+#include "sensor_msgs/LaserScan.h"
+#include <actionlib/server/simple_action_server.h>
+#include "ros_pathtracking/pathtrackingAction.h"
+
+
+
+#define VISUAL_ANGLE             ((float)(120 * M_PI / 180.0))      //no use
+#define ROUND_DISTANCE           ((float)1.5)                       //distance of Center alignment
+#define ROUND_MIN                ((float)0.7)                       //minimum distance of Center alignment
+#define ROUND_ANGLE_MAX          ((float)3.14)                      //max angle of Center alignment
+#define PANNEL_LENGTH            ((float)0.17)
+#define OBSTACLE_DISTANCE        ((float)0.1)
+#define OBSTACLE_ANGLE_MIN       ((float)(-180 * M_PI / 180.0))      // start angle of obstacle detection
+#define OBSTACLE_ANGLE_MAX       ((float)(180 * M_PI / 180.0))       // end angle of obstacle detection
+#define OBSTACLE_DRADZONE        ((float)0.6)                       // ignore obstacle when pretouched the charger
+#define PRETOUCH_DISTANCE        ((float)0.75)                      // slow down to touch the charger
+#define MOVEBACK_DISTANCE        ((float)0.5)
+
+
+typedef actionlib::SimpleActionServer<ros_pathtracking::pathtrackingAction> PathTracking_Server;
+
+
+
+class ROSPathTracking
+{
+    protected:
+
+
+    public:
+        enum StepEnum
+        {
+            STEP_INIT,
+            STEP_PARAM_INIT,
+            STEP_TRACKING,
+            STEP_CANCEL,
+            STEP_SUCCESS,
+            STEP_RECOVERY = 0xFE,
+            STEP_ERROR = 0xFF
+        };
+        ROSPathTracking();
+        ~ROSPathTracking();
+
+        void executeCB(const ros_pathtracking::pathtrackingGoalConstPtr &goal);
+        void LaserScanCallback(const sensor_msgs::LaserScan &scan);
+        void PathMotionHandler();
+        void loop();
+        void start();
+        void stop();
+        void cancel();
+        void shutdown();
+        
+
+        void setWaitStable(unsigned int sec);
+        bool isStable();
+        inline bool isEqual(double num1, double num2)
+        {
+            return (std::fabs(num1 - num2) <= 0.01);
+        }
+
+        void setASpeedAccParam(float acc = 1.57, float dec = 3.14){
+            ASpeed.facc = acc;
+            ASpeed.bacc = acc;
+            ASpeed.fdec = dec;
+            ASpeed.bdec = dec;
+        }
+        void setLSpeedAccParam(float acc = 0.5, float dec = 1){
+            LSpeed.facc = acc;
+            LSpeed.bacc = acc;
+            LSpeed.fdec = dec;
+            LSpeed.bdec = dec;
+        }
+        void setLSpeedWithAcc(float speed){
+            LSpeed.setspeed = getAccSpeed(LSpeed.facc,LSpeed.fdec, LSpeed.bacc, LSpeed.bdec, speed, LSpeed.setspeed, LSpeed.setspeed, period_.toSec());
+        }
+        void setASpeedWithAcc(float speed){
+            ASpeed.setspeed = getAccSpeed(ASpeed.facc,ASpeed.fdec, ASpeed.bacc, ASpeed.bdec, speed, ASpeed.setspeed, ASpeed.setspeed, period_.toSec());
+        }
+        void setLSpeed(float speed){
+            LSpeed.setspeed = speed;
+        }
+        void setASpeed(float speed){
+            ASpeed.setspeed = speed;
+        }
+
+        void setAllSpeedZero(){
+            LSpeed.setspeed = 0;
+            ASpeed.setspeed = 0;
+        }
+
+        void setAllSpeedZeroWithAcc(){
+            LSpeed.setspeed = getAccSpeed(LSpeed.facc,LSpeed.fdec, LSpeed.bacc, LSpeed.bdec, 0, LSpeed.setspeed, LSpeed.setspeed, period_.toSec());
+            ASpeed.setspeed = getAccSpeed(ASpeed.facc,ASpeed.fdec, ASpeed.bacc, ASpeed.bdec, 0, ASpeed.setspeed, ASpeed.setspeed, period_.toSec());
+        }
+
+        void publishZeroSpeed(){
+            ASpeed.setspeed = 0;
+            LSpeed.setspeed = 0;
+            publishSpeed();
+        }
+
+        void publishSpeed(){
+            cmd_vel_.linear.x = LSpeed.setspeed;
+            cmd_vel_.angular.z = ASpeed.setspeed;
+            cmd_pub_.publish(cmd_vel_);
+        }
+        
+        unsigned int getStep();
+
+
+    private:
+        ros::NodeHandle nh_;
+        tf::TransformListener listener_, laser_listener_;
+        PathTracking_Server *as_;
+
+        ros::Subscriber laser_scan_sub_;
+        ros::Publisher cmd_pub_;
+
+        std::string laser_topic_, cmd_vel_topic_, pannel_frame_id_, base_frame_id_, laser_frame_id_, map_frame_id_;
+
+        tf::StampedTransform transform_;
+
+        ros::Duration period_, motion_waittime_, stable_waittime_;
+        ros::Duration scan_overtime_, obstacle_overtime_, map_tf_overtime_;
+
+        ros::Time search_time_, last_scan_time_, last_time_, tf_now_, tf_last_, last_stable_time_, cancel_time_;
+
+        geometry_msgs::Twist cmd_vel_;
+
+        ros_pathtracking::pathtrackingGoalConstPtr newgoal_;
+        ros_pathtracking::pathtrackingFeedback feedback_;
+        ros_pathtracking::pathtrackingResult result_;
+
+        int state_;
+        unsigned int step_;
+        bool tf_rev_;
+        bool have_obstacle_;
+        bool wait_stable_;
+        bool moveback_;
+        bool scan_ready_;
+
+        float target_speed, target_aspeed, target_angle;
+        float facc, fdec, bacc, bdec;
+
+        float x_, y_, yaw_, x_temp_, y_temp_, yaw_temp_;
+        
+        uint32_t point_now_, point_target_, point_end_;
+        double distance_, dec_distance_;
+
+        struct acc_data
+        {
+            float facc, fdec, bacc, bdec;
+            float targetspeed, setspeed;
+        }LSpeed, ASpeed;
+
+
+        // param
+        std::string movebase_polygon_str_;
+        std::vector<float*> movebase_polygon_;
+        float moveback_distance_;
+        float visual_angle_;
+        float round_distance_;
+        float round_min_distance_;
+        float round_angle_max_;
+        float pannel_length_;
+        float obstacle_distance_;
+        float obstacle_angle_min_;
+        float obstacle_angle_max_;
+        float obstacle_deadzone_;
+        float pretouch_distance_;
+
+        void StepChange(StepEnum nextstep);
+        float getAccSpeed(float facc , float fdec , float bacc , float bdec , float target , float now_set, float real_value, double period);
+};
+
+
+
+const double EPS = 1e-5;
+
+const int NONE = 0;
+const int CROSS = 1;
+const int PARALLEL = 2;
+const int COLLINEATION = 3;
+
+
+typedef struct 
+{
+    double x, y;
+}Point;
+
+typedef struct
+{
+    Point p1, p2;
+}Line;
+
+bool isEqual(double num1, double num2, double eps = EPS);
+bool PointIsONLine(Point p, Line l);
+int CalCrossPoint(Line L1, Line L2, Point& P, double& length);
+
+
+
+#endif
+

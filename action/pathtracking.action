@@ -1,0 +1,9 @@
+# Define the goal
+uint32 startmode
+geometry_msgs/PoseArray path
+---
+# Define the result
+uint32 result
+---
+# Define a feedback message
+uint32 Step
