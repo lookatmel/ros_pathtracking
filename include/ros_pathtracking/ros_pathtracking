@@ -113,6 +113,14 @@ class ROSPathTracking
         
         unsigned int getStep();
 
+        float getLSpeed(void){
+            return LSpeed.setspeed;
+        }
+        float getASpeed(void){
+            return ASpeed.setspeed;
+        }
+
+
 
     private:
         ros::NodeHandle nh_;
@@ -150,8 +158,17 @@ class ROSPathTracking
 
         float x_, y_, yaw_, x_temp_, y_temp_, yaw_temp_;
         
-        uint32_t point_now_, point_target_, point_end_;
-        double distance_, dec_distance_;
+        uint32_t point_now_, point_target_, point_end_, point_cal_;
+        double planning_distance_, dec_distance_;
+        struct point_param
+        {
+            float length;
+            float point_speedmax;
+            float path_speedmax;
+            float angle;
+            float diff_angle;
+        };
+        vector<point_param> point_data_;
 
         struct acc_data
         {
@@ -202,8 +219,9 @@ typedef struct
 bool isEqual(double num1, double num2, double eps = EPS);
 bool PointIsONLine(Point p, Line l);
 int CalCrossPoint(Line L1, Line L2, Point& P, double& length);
-
-
+double calPathAngle(Point p1, Point p2);
+double DegreeToRad(double degree);
+double RadToDegree(double rad);
 
 #endif
 
