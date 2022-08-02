@@ -159,7 +159,10 @@ class ROSPathTracking
         float x_, y_, yaw_, x_temp_, y_temp_, yaw_temp_;
         
         uint32_t point_now_, point_target_, point_end_, point_cal_;
-        double planning_distance_, dec_distance_;
+        double planning_distance_, dec_distance_, predict_distance_;
+        double planning_time_;
+        double max_lacc_, lacc_, max_aacc_, aacc_, max_ldec_, ldec_, max_adec_, adec_;
+        double max_lspeed_, min_lspeed_, max_aspeed_, min_aspeed_;
         struct point_param
         {
             float length;

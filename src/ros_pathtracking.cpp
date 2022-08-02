@@ -102,6 +102,19 @@ void ROSPathTracking::start()
     planning_distance_ = 0;
     dec_distance_ = 0;
 
+    max_lacc_ = 1;
+    lacc_ = 0.5;
+    max_ldec_ = 1;
+    ldec_ = 0.5;
+
+    max_lspeed_ = 1.0;
+    max_aspeed_ = 0.2;
+
+    planning_time_ = 1.0;
+
+    dec_distance_ = pow(max_lspeed_, 2) / (2.0 * ldec_);
+    predict_distance_ = dec_distance_ + max_lspeed_ * planning_time_;
+
     laser_scan_sub_ = nh_.subscribe(laser_topic_, 100, &ROSPathTracking::LaserScanCallback, this);
     last_time_ = ros::Time::now();
 }
@@ -306,7 +319,7 @@ void ROSPathTracking::PathMotionHandler()
                 planning_distance_ += point_data_.at(i).length;
             }
 
-            for(; planning_distance_ < dec_distance_; )
+            for(; planning_distance_ < predict_distance_; )
             {
                 if(point_target_ >= point_end_) break;
                 point_target_++;
