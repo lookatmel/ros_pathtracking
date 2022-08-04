@@ -296,13 +296,42 @@ void ROSPathTracking::PathMotionHandler()
             dec_distance_ = 0;
             point_end_ = newgoal_->path.poses.size();
             //*********验证当前位置在路径中还是路径前************
-
-            //***********************************************
-            point_data_.push_back((point_param){sqrt(pow(newgoal_->path.poses.at(0).position.x - x_, 2) \
+            PointIsAheadOfLine((Line){{newgoal_->path.poses.at(0).position.x - (newgoal_->path.poses.at(1).position.x - newgoal_->path.poses.at(0).position.x)},\
+                                        {newgoal_->path.poses.at(0).position.y - (newgoal_->path.poses.at(1).position.y - newgoal_->path.poses.at(0).position.y)}}, \
+                                (Point){x_, y_});
+            //*******Calculate distance and angle of now position to point 0
+            point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(0).position.x - x_, 2) \
                                                     + pow(newgoal_->path.poses.at(0).position.y - y_, 2)), \
                                                 0, 0, \
-                                                calPathAngle((Point){x_, y_}, (Point){newgoal_->path.poses.at(0).position.x, newgoal_->path.poses.at(0).position.y}), \
+                                                CalPathAngle((Point){x_, y_}, (Point){newgoal_->path.poses.at(0).position.x, newgoal_->path.poses.at(0).position.y}), \
                                                 0});
+            
+            //***********Calculate distance and angle of single path
+            for(uint32_t i = 1; i < point_end_; i++)
+            {
+                point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(i).position.x - newgoal_->path.poses.at(i - 1).position.x, 2) \
+                                                        + pow(newgoal_->path.poses.at(i).position.y - newgoal_->path.poses.at(i - 1).position.y, 2)), \
+                                                    0, 0, \
+                                                    CalPathAngle((Point){newgoal_->path.poses.at(i - 1).position.x, newgoal_->path.poses.at(i - 1).position.y},\
+                                                                    (Point){newgoal_->path.poses.at(i).position.x, newgoal_->path.poses.at(i).position.y}), \
+                                                    0});
+            }
+            //***********Calculate difference angle and point speed
+            for(uint32_t i = 0; i < point_end_ - 1; ++i)
+            {
+                point_data_.at(i).diff_angle = point_data_.at(i + 1).angle - point_data_.at(i).angle;
+                point_data_.at(i).point_speedmax = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01f, point_data_.at(i).diff_angle));
+            }
+            //***********Calculate raw path speed through dec (from end to start)
+            for(uint32_t i = point_end_ - 2; i > 0; ++i)
+            {
+                point_data_.at(i).raw_path_speed = min((double)point_data_.at(i).point_speedmax,\
+                                                        sqrt(pow(point_data_.at(i+1).raw_path_speed, 2) + 2 * ldec_ * point_data_.at(i + 1).length));
+            }
+
+            //***********Calculate  path speed through acc (from start to end)
+
+
             // break;
         case STEP_TRACKING:
 
@@ -323,7 +352,7 @@ void ROSPathTracking::PathMotionHandler()
             {
                 if(point_target_ >= point_end_) break;
                 point_target_++;
-                point_data_.push_back((point_param){sqrt(pow(newgoal_->path.poses.at(point_target_).position.x - newgoal_->path.poses.at(point_target_ - 1).position.x, 2) \
+                point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(point_target_).position.x - newgoal_->path.poses.at(point_target_ - 1).position.x, 2) \
                                                         + pow(newgoal_->path.poses.at(point_target_).position.y - newgoal_->path.poses.at(point_target_ - 1).position.y, 2)), \
                                                     0, \
                                                     0, 0, 0});
@@ -616,7 +645,7 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
 
 
 
-bool isEqual(double num1, double num2, double eps)
+bool IsEqual(double num1, double num2, double eps)
 {
     return (std::fabs(num1 - num2) <= eps);
 }
@@ -710,7 +739,7 @@ int CalCrossPoint(Line L1, Line L2, Point& P, double& length)
 
 
 //dir p1->p2
-double calPathAngle(Point p1, Point p2)
+double CalPathAngle(Point p1, Point p2)
 {
     double angle = 0;
     angle = atan2(p2.y - p1.y, p2.x - p1.x);
@@ -726,5 +755,19 @@ double RadToDegree(double rad)
     return rad * 180.0 / M_PI;
 }
 
+
+int8_t PointIsAheadOfLine(Line path, Point point)
+{
+    int8_t pos = 0;
+    double tmp = 0;
+    double x1 = path.p2.x - path.p1.x;
+    double y1 = path.p2.y - path.p1.y;
+    double x2 = point.x - path.p2.x;
+    double y2 = point.y - path.p2.y;
+    // if(sqrt(pow(point.x - path.p2.x, 2) + pow(point.y - path.p2.y, 2)) < POS_EPS) return 0;
+    tmp = x1 * x2 + y1 * y2;
+    if(tmp >= 0) return 1;
+    return 0;
+}
 
 
