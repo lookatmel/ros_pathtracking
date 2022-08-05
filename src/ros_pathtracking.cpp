@@ -303,7 +303,7 @@ void ROSPathTracking::PathMotionHandler()
             point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(0).position.x - x_, 2) \
                                                     + pow(newgoal_->path.poses.at(0).position.y - y_, 2)), \
                                                 0, 0, \
-                                                CalPathAngle((Point){x_, y_}, (Point){newgoal_->path.poses.at(0).position.x, newgoal_->path.poses.at(0).position.y}), \
+                                                calPathAngle((Point){x_, y_}, (Point){newgoal_->path.poses.at(0).position.x, newgoal_->path.poses.at(0).position.y}), \
                                                 0});
             
             //***********Calculate distance and angle of single path
@@ -312,7 +312,7 @@ void ROSPathTracking::PathMotionHandler()
                 point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(i).position.x - newgoal_->path.poses.at(i - 1).position.x, 2) \
                                                         + pow(newgoal_->path.poses.at(i).position.y - newgoal_->path.poses.at(i - 1).position.y, 2)), \
                                                     0, 0, \
-                                                    CalPathAngle((Point){newgoal_->path.poses.at(i - 1).position.x, newgoal_->path.poses.at(i - 1).position.y},\
+                                                    calPathAngle((Point){newgoal_->path.poses.at(i - 1).position.x, newgoal_->path.poses.at(i - 1).position.y},\
                                                                     (Point){newgoal_->path.poses.at(i).position.x, newgoal_->path.poses.at(i).position.y}), \
                                                     0});
             }
@@ -320,7 +320,7 @@ void ROSPathTracking::PathMotionHandler()
             for(uint32_t i = 0; i < point_end_ - 1; ++i)
             {
                 point_data_.at(i).diff_angle = point_data_.at(i + 1).angle - point_data_.at(i).angle;
-                point_data_.at(i).point_speed = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01f, point_data_.at(i).diff_angle));
+                point_data_.at(i).point_speed = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01, point_data_.at(i).diff_angle));
             }
             //***********Calculate raw path speed through dec (from end to start)
             for(uint32_t i = point_end_ - 2; i > 0; ++i)
@@ -335,35 +335,48 @@ void ROSPathTracking::PathMotionHandler()
                 point_data_.at(i).path_speed = min((double)point_data_.at(i).raw_path_speed,\
                                                     (sqrt(pow(point_data_.at(i - 1).raw_path_speed, 2) + 2 * lacc_ * point_data_.at(i).length)));
             }
+            point_now_ = 1;
 
-            // break;
+            for(uint32_t i = 0; i < point_end_; i++)
+            {
+                printf("%0.4f  %0.4f  %0.4f \r\n", point_data_.at(i).angle, point_data_.at(i).diff_angle, point_data_.at(i).path_speed);
+            }
+            
+            break;
         case STEP_TRACKING:
 
-            //************************计算当前点是否过目标点,并更新目标点
-
+            //************************计算当前点是否过当前点,并更新当前点
+            for(; point_now_ < point_end_; point_now_++)
+            {
+                PointIsAheadOfLine((Line){{newgoal_->path.poses.at(point_now_).position.x - newgoal_->path.poses.at(point_now_ - 1).position.x},\
+                                            {newgoal_->path.poses.at(point_now_).position.y - newgoal_->path.poses.at(point_now_ - 1).position.y}}, \
+                                    (Point){x_, y_});
+            }
+            
             //************************计算规划距离是否满足dec-distance
-            auto pos_to_target = sqrt(pow(newgoal_->path.poses.at(point_now_).position.x - x_, 2) \
-                                        + pow(newgoal_->path.poses.at(point_now_).position.y - y_, 2));
+            // auto pos_to_target = sqrt(pow(newgoal_->path.poses.at(point_now_).position.x - x_, 2) \
+            //                             + pow(newgoal_->path.poses.at(point_now_).position.y - y_, 2));
 
-            planning_distance_ = pos_to_target;
-            for(auto i = point_now_ + 1; i <= point_target_; ++i)
-            {
-                if((point_now_ == 0 && point_target_ ==0) || point_now_ == point_target_) break;
-                planning_distance_ += point_data_.at(i).length;
-            }
+            // planning_distance_ = pos_to_target;
+            // for(auto i = point_now_ + 1; i <= point_target_; ++i)
+            // {
+            //     if((point_now_ == 0 && point_target_ ==0) || point_now_ == point_target_) break;
+            //     planning_distance_ += point_data_.at(i).length;
+            // }
 
-            for(; planning_distance_ < predict_distance_; )
-            {
-                if(point_target_ >= point_end_) break;
-                point_target_++;
-                point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(point_target_).position.x - newgoal_->path.poses.at(point_target_ - 1).position.x, 2) \
-                                                        + pow(newgoal_->path.poses.at(point_target_).position.y - newgoal_->path.poses.at(point_target_ - 1).position.y, 2)), \
-                                                    0, \
-                                                    0, 0, 0});
-                planning_distance_ += point_data_.at(point_target_).length;
-            }
+            // for(; planning_distance_ < predict_distance_; )
+            // {
+            //     if(point_target_ >= point_end_) break;
+            //     point_target_++;
+            //     point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(point_target_).position.x - newgoal_->path.poses.at(point_target_ - 1).position.x, 2) \
+            //                                             + pow(newgoal_->path.poses.at(point_target_).position.y - newgoal_->path.poses.at(point_target_ - 1).position.y, 2)), \
+            //                                         0, \
+            //                                         0, 0, 0});
+            //     planning_distance_ += point_data_.at(point_target_).length;
+            // }
             //*************************速度规划
-
+            setASpeedWithAcc((point_data_.at(point_now_).angle - yaw_) * 1);
+            setLSpeedWithAcc(point_data_.at(point_now_).path_speed);
 
 
 
@@ -603,7 +616,7 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
                     l2.p2.y = *(polygon.cbegin()->cbegin() + 1);
                 }
 
-                int tmp = CalCrossPoint(l1, l2, crosspoint, length);
+                int tmp = calCrossPoint(l1, l2, crosspoint, length);
                 if(tmp == CROSS || tmp == COLLINEATION)
                 {
                     obstacle_thr.push_back(length + obstacle_distance_); 
@@ -616,7 +629,7 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
                 }
             }
         }
-        ROS_INFO("laser size:%d , obstacle size:%d", scan.ranges.size(), obstacle_thr.size());
+        ROS_INFO("laser size:%ld , obstacle size:%ld", scan.ranges.size(), obstacle_thr.size());
         for(auto i = obstacle_thr.cbegin(); i != obstacle_thr.cend(); ++i)
         {
             printf("%0.5f\r\n", *i); 
@@ -649,7 +662,7 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
 
 
 
-bool IsEqual(double num1, double num2, double eps)
+bool isEqual(double num1, double num2, double eps)
 {
     return (std::fabs(num1 - num2) <= eps);
 }
@@ -660,7 +673,7 @@ bool PointIsONLine(Point p, Line l)
             ((p.y >= l.p1.y && p.y <= l.p2.y) || (p.y <= l.p1.y && p.y >= l.p2.y) || isEqual(p.y, l.p1.y) || isEqual(p.y, l.p2.y)));
 }
 
-int CalCrossPoint(Line L1, Line L2, Point& P, double& length)
+int calCrossPoint(Line L1, Line L2, Point& P, double& length)
 {
     double   A1,   B1,   C1,   A2,   B2,   C2; 
     A1   =   L1.p2.y   -   L1.p1.y; 
@@ -743,7 +756,7 @@ int CalCrossPoint(Line L1, Line L2, Point& P, double& length)
 
 
 //dir p1->p2
-double CalPathAngle(Point p1, Point p2)
+double calPathAngle(Point p1, Point p2)
 {
     double angle = 0;
     angle = atan2(p2.y - p1.y, p2.x - p1.x);

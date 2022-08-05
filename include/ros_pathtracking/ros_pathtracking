@@ -156,7 +156,7 @@ class ROSPathTracking
         float target_speed, target_aspeed, target_angle;
         float facc, fdec, bacc, bdec;
 
-        float x_, y_, yaw_, x_temp_, y_temp_, yaw_temp_;
+        double x_, y_, yaw_, x_temp_, y_temp_, yaw_temp_;
         
         uint32_t point_now_, point_target_, point_end_, point_cal_;
         double planning_distance_, dec_distance_, predict_distance_;
@@ -165,14 +165,14 @@ class ROSPathTracking
         double max_lspeed_, min_lspeed_, max_aspeed_, min_aspeed_;
         struct PointParam
         {
-            float length;
-            float point_speed;
-            float raw_path_speed;
-            float path_speed;
-            float angle;
-            float diff_angle;
+            double length;
+            double point_speed;
+            double raw_path_speed;
+            double path_speed;
+            double angle;
+            double diff_angle;
         };
-        vector<PointParam> point_data_;
+        std::vector<PointParam> point_data_;
 
         struct acc_data
         {
