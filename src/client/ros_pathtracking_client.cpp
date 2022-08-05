@@ -3,6 +3,8 @@
 #include <actionlib/client/terminal_state.h>
 
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PoseArray.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "ros_pathtracking/pathtrackingAction.h"
 
 #include <signal.h>
@@ -55,6 +57,8 @@ int main(int argc, char **argv)
 {
     ros::init(argc,argv,"action_test_client",ros::init_options::NoSigintHandler); 
     ros::NodeHandle nh;
+    ros::Publisher posearr_pub_ = nh.advertise<geometry_msgs::PoseArray>("posearray", 10);
+    ros::Publisher pose_pub_ = nh.advertise<geometry_msgs::PoseStamped>("pose", 10);
     Client ac("AutoCharge_Server", true);
     ac_ = &ac;
     ros::Duration t(10);
@@ -71,13 +75,23 @@ int main(int argc, char **argv)
     
     goal.startmode = 1;
     geometry_msgs::Pose pose;
-    for(uint32_t i = 0; i < 100; i++)
+    geometry_msgs::PoseStamped poses;
+    geometry_msgs::PoseArray posearray;
+    for(uint32_t i = 0; i <= 100; i++)
     {
-        pose.position.x = M_PI *4 / 100.0 * i;
-        pose.position.y = 1 * sin(2 * pose.position.x);
+        pose.position.x = M_PI * 4 / 100.0 * i - 2;
+        pose.position.y = 0.2 * sin(2 * pose.position.x) - 0.5;
+        pose.position.z = 0.1;
         goal.path.poses.push_back(pose);
-    }
+        posearray.poses.push_back(pose);
 
+        poses.pose = pose;
+        poses.header.frame_id = "map";
+        pose_pub_.publish(poses);
+    }
+    posearray.header.frame_id = "map";
+    posearr_pub_.publish(posearray);
+    
     ac.sendGoal(goal, doneCallback, activeCallback, feedbackCallback);
     
 

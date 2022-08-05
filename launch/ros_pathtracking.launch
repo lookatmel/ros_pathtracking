@@ -5,7 +5,8 @@
         <param name="cmd_vel" type="string" value="/cmd_vel" />
         <param name="pannel_id" type="string" value="/pannel" />
         <param name="base_id" type="string" value="/base_link" />
-        <param name="movebase_polygon" type="string" value="[[0.66,-0.41],[0.66,0.41],[-0.66,0.41],[-0.66,-0.41]]" />
+        <param name="laser_id" type="string" value="/base_scan" />
+        <param name="movebase_polygon" type="string" value="[[0.10,-0.09],[0.10,0.09],[-0.10,0.09],[-0.10,-0.09]]" />
 	<!-- <param name="movebase_polygon" type="string" value="[[0.46,-0.31],[0.46,0.31],[-0.46,0.31],[-0.46,-0.31]]" /> -->
     </node>
 

@@ -128,7 +128,7 @@ class ROSPathTracking
         PathTracking_Server *as_;
 
         ros::Subscriber laser_scan_sub_;
-        ros::Publisher cmd_pub_;
+        ros::Publisher cmd_pub_, pose_pub_;
 
         std::string laser_topic_, cmd_vel_topic_, pannel_frame_id_, base_frame_id_, laser_frame_id_, map_frame_id_;
 
