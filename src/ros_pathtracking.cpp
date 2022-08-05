@@ -320,17 +320,21 @@ void ROSPathTracking::PathMotionHandler()
             for(uint32_t i = 0; i < point_end_ - 1; ++i)
             {
                 point_data_.at(i).diff_angle = point_data_.at(i + 1).angle - point_data_.at(i).angle;
-                point_data_.at(i).point_speedmax = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01f, point_data_.at(i).diff_angle));
+                point_data_.at(i).point_speed = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01f, point_data_.at(i).diff_angle));
             }
             //***********Calculate raw path speed through dec (from end to start)
             for(uint32_t i = point_end_ - 2; i > 0; ++i)
             {
-                point_data_.at(i).raw_path_speed = min((double)point_data_.at(i).point_speedmax,\
+                point_data_.at(i).raw_path_speed = min((double)point_data_.at(i).point_speed,\
                                                         sqrt(pow(point_data_.at(i+1).raw_path_speed, 2) + 2 * ldec_ * point_data_.at(i + 1).length));
             }
 
             //***********Calculate  path speed through acc (from start to end)
-
+            for(uint32_t i = 1; i < point_end_ - 1; ++i)
+            {
+                point_data_.at(i).path_speed = min((double)point_data_.at(i).raw_path_speed,\
+                                                    (sqrt(pow(point_data_.at(i - 1).raw_path_speed, 2) + 2 * lacc_ * point_data_.at(i).length)));
+            }
 
             // break;
         case STEP_TRACKING:
