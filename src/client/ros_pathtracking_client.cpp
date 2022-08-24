@@ -6,6 +6,8 @@
 #include "geometry_msgs/PoseArray.h"
 #include "geometry_msgs/PoseStamped.h"
 #include "ros_pathtracking/pathtrackingAction.h"
+#include "tf/transform_broadcaster.h"
+#include "tf/transform_listener.h"
 
 #include <signal.h>
 
@@ -77,18 +79,36 @@ int main(int argc, char **argv)
     geometry_msgs::Pose pose;
     geometry_msgs::PoseStamped poses;
     geometry_msgs::PoseArray posearray;
+    tf::Quaternion quat;
+    double roll = 0, pitch = 0, yaw = 0;
     for(uint32_t i = 0; i <= 100; i++)
     {
-        pose.position.x = M_PI * 4 / 100.0 * i - 2;
-        pose.position.y = 0.2 * sin(2 * pose.position.x) - 0.5;
+        pose.position.x = M_PI * 1 / 100.0 * i - 2;
+        pose.position.y = 0.2 * sin(4 * pose.position.x) - 0.5;
         pose.position.z = 0.1;
         goal.path.poses.push_back(pose);
         posearray.poses.push_back(pose);
-
-        poses.pose = pose;
-        poses.header.frame_id = "map";
-        pose_pub_.publish(poses);
+        // poses.pose = pose;
+        // poses.header.frame_id = "map";
+        // pose_pub_.publish(poses);
     }
+    for(auto i = posearray.poses.begin(); i != posearray.poses.cend(); ++i)
+    {
+        if(i == posearray.poses.cend())
+        {
+            i->orientation.x = (i - 1)->orientation.x;
+            i->orientation.y = (i - 1)->orientation.y;
+            i->orientation.z = (i - 1)->orientation.z;
+            i->orientation.w = (i - 1)->orientation.w;
+        }
+        quat.setRPY(0, 0, atan2((i + 1)->position.y - i->position.y, (i + 1)->position.x - i->position.x));
+        i->orientation.x = quat.getX();
+        i->orientation.y = quat.getY();
+        i->orientation.z = quat.getZ();
+        i->orientation.w = quat.getW();
+    }
+
+    goal.path.header.frame_id = "map";
     posearray.header.frame_id = "map";
     posearr_pub_.publish(posearray);
     

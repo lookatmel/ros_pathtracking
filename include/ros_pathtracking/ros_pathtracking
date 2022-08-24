@@ -39,6 +39,7 @@ class ROSPathTracking
             STEP_INIT,
             STEP_PARAM_INIT,
             STEP_TRACKING,
+            STEP_WAITING,
             STEP_CANCEL,
             STEP_SUCCESS,
             STEP_RECOVERY = 0xFE,

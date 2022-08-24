@@ -104,12 +104,13 @@ void ROSPathTracking::start()
     dec_distance_ = 0;
 
     max_lacc_ = 1;
-    lacc_ = 0.5;
+    lacc_ = 0.1;
     max_ldec_ = 1;
-    ldec_ = 0.5;
+    ldec_ = 0.2;
 
-    max_lspeed_ = 0.1;
-    max_aspeed_ = 0.05;
+    max_lspeed_ = 0.3;
+    min_lspeed_ = 0.01;
+    max_aspeed_ = 0.2;
 
     planning_time_ = 1.0;
 
@@ -150,9 +151,10 @@ void ROSPathTracking::executeCB(const ros_pathtracking::pathtrackingGoalConstPtr
     ROS_INFO("Got a Goal:%d", newgoal_->startmode);
     start();
     setLSpeedAccParam(0.1,0.2);
-    setASpeedAccParam(3.14/8, 3.14/1);
+    // setASpeedAccParam(3.14/8, 3.14/1);
+    setASpeedAccParam(3.14/1, 3.14/1);
 
-    ros::Rate r(20);
+    ros::Rate r(100);
     while(1)
     {
         if(!ros::ok() || !as_->isActive())
@@ -217,7 +219,9 @@ void ROSPathTracking::executeCB(const ros_pathtracking::pathtrackingGoalConstPtr
 void ROSPathTracking::PathMotionHandler()
 {
     double tangle = 0;
-    double xx = 0, yy = 0;
+    double forward_x = 0, forward_y = 0;
+    static double start_x, start_y, start_yaw;
+    float aspeed = 0;
     geometry_msgs::PoseArray posearray_tmp;
     try
     {
@@ -299,6 +303,9 @@ void ROSPathTracking::PathMotionHandler()
             planning_distance_ = 0;
             dec_distance_ = 0;
             point_end_ = newgoal_->path.poses.size();
+            start_x = x_;
+            start_y = y_;
+            start_yaw = yaw_;
 
             // pose_pub_.publish(newgoal_->path);
             //*********验证当前位置在路径中还是路径前************
@@ -306,12 +313,17 @@ void ROSPathTracking::PathMotionHandler()
             //                             {newgoal_->path.poses.at(0).position.y - (newgoal_->path.poses.at(1).position.y - newgoal_->path.poses.at(0).position.y)}}, \
             //                     (Point){x_, y_});
             //*******Calculate distance and angle of now position to point 0
+            // point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(0).position.x - x_, 2) \
+            //                                         + pow(newgoal_->path.poses.at(0).position.y - y_, 2)), \
+            //                                     0, 0, 0, \
+            //                                     calPathAngle((Point){x_, y_}, (Point){newgoal_->path.poses.at(0).position.x, newgoal_->path.poses.at(0).position.y}), \
+            //                                     0});
             point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(0).position.x - x_, 2) \
                                                     + pow(newgoal_->path.poses.at(0).position.y - y_, 2)), \
                                                 0, 0, 0, \
-                                                calPathAngle((Point){x_, y_}, (Point){newgoal_->path.poses.at(0).position.x, newgoal_->path.poses.at(0).position.y}), \
+                                                calPathAngle((Point){start_x, start_y},\
+                                                                    (Point){newgoal_->path.poses.at(0).position.x, newgoal_->path.poses.at(0).position.y}), \
                                                 0});
-            
             //***********Calculate distance and angle of single path
             for(uint32_t i = 1; i < point_end_; i++)
             {
@@ -327,27 +339,46 @@ void ROSPathTracking::PathMotionHandler()
             //***********Calculate difference angle and point speed
             for(uint32_t i = 0; i < point_end_ - 1; ++i)
             {
-                point_data_.at(i).diff_angle = (point_data_.at(i + 1).angle - point_data_.at(i).angle);
-                point_data_.at(i).point_speed = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01, fabs(point_data_.at(i).diff_angle)));
+                if(i == 0)
+                {
+                    point_data_.at(0).diff_angle = (point_data_.at(0).angle - start_yaw);
+                    point_data_.at(i).point_speed = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01, fabs(point_data_.at(i).diff_angle)));
+                }
+                else
+                {
+                    point_data_.at(i).diff_angle = (point_data_.at(i).angle - point_data_.at(i - 1).angle);
+                    point_data_.at(i).point_speed = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01, fabs(point_data_.at(i).diff_angle)));
+                }
             }
             //***********Calculate raw path speed through dec (from end to start)
-            for(uint32_t i = point_end_ - 2; i > 0; --i)
+            for(int32_t i = point_end_ - 2; i >= 0; --i)
             {
                 point_data_.at(i).raw_path_speed = min((double)point_data_.at(i).point_speed,\
                                                         sqrt(pow(point_data_.at(i+1).raw_path_speed, 2) + 2 * ldec_ * point_data_.at(i + 1).length));
             }
             //***********Calculate  path speed through acc (from start to end)
-            for(uint32_t i = 1; i < point_end_ - 1; ++i)
+            for(uint32_t i = 0; i < point_end_ - 1; ++i)
             {
-                point_data_.at(i).path_speed = min((double)point_data_.at(i).raw_path_speed,\
+                if(i == 0)
+                {
+                    point_data_.at(i).path_speed = min((double)point_data_.at(i).raw_path_speed,\
+                                                    (sqrt(2 * lacc_ * point_data_.at(i).length)));
+                }
+                else
+                {
+                    point_data_.at(i).path_speed = min((double)point_data_.at(i).raw_path_speed,\
                                                     (sqrt(pow(point_data_.at(i - 1).raw_path_speed, 2) + 2 * lacc_ * point_data_.at(i).length)));
+                }
+                
             }
-            point_now_ = 1;
-
+            point_now_ = 0;
             for(auto i = point_data_.cbegin(); i != point_data_.cend(); i++)
             {
                 printf("%0.4f  %0.4f  %0.4f %0.4f\r\n", i->angle, i->diff_angle, i->path_speed, i->length);
             }
+            printf("end point: x:%0.4f y:%0.4f\r\n", (newgoal_->path.poses.cend() - 1)->position.x, (newgoal_->path.poses.cend() - 1)->position.y);
+            printf("point speed:%0.4f path raw speed:%0.4f path speed:%0.4f\r\n", (point_data_.cbegin())->point_speed, (point_data_.cbegin())->raw_path_speed, (point_data_.cbegin())->path_speed);
+            printf("point speed:%0.4f path raw speed:%0.4f path speed:%0.4f\r\n", (point_data_.cend()-1)->point_speed, (point_data_.cend()-1)->raw_path_speed, (point_data_.cend()-1)->path_speed);
             StepChange(STEP_TRACKING);
             break;
         case STEP_TRACKING:
@@ -355,9 +386,15 @@ void ROSPathTracking::PathMotionHandler()
             //************************计算当前点是否过当前点,并更新当前点
             for(; point_now_ < point_end_ - 1;)
             {
-                printf("%d\r\n", point_now_);
-                if(!PointIsAheadOfLine((Line){{newgoal_->path.poses.at(point_now_).position.x - newgoal_->path.poses.at(point_now_ - 1).position.x},\
-                                            {newgoal_->path.poses.at(point_now_).position.y - newgoal_->path.poses.at(point_now_ - 1).position.y}}, \
+                if(point_now_ == 0)
+                {
+                    if(!PointIsAheadOfLine((Line){{start_x, start_y},\
+                                            {newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y}}, \
+                                            (Point){x_, y_}))
+                    break;
+                }
+                else if(!PointIsAheadOfLine((Line){{newgoal_->path.poses.at(point_now_ - 1).position.x, newgoal_->path.poses.at(point_now_ - 1).position.y},\
+                                            {newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y}}, \
                                     (Point){x_, y_}))
                 {
                     break;
@@ -365,7 +402,7 @@ void ROSPathTracking::PathMotionHandler()
                 point_now_++;
             }
 
-            printf("x_:%0.3f y_:%0.3f px:%0.3f py:%0.3f\r\n", x_, y_, newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y);
+            printf("point:%d x_:%0.4f y_:%0.4f px:%0.4f py:%0.4f\r\n", point_now_, x_, y_, newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y);
             
             //************************计算规划距离是否满足dec-distance
             // auto pos_to_target = sqrt(pow(newgoal_->path.poses.at(point_now_).position.x - x_, 2) \
@@ -389,14 +426,44 @@ void ROSPathTracking::PathMotionHandler()
             //     planning_distance_ += point_data_.at(point_target_).length;
             // }
             //*************************速度规划
-            xx = newgoal_->path.poses.at(point_now_).position.x + newgoal_->path.poses.at(point_now_).position.x - newgoal_->path.poses.at(point_now_ - 1).position.x;
-            yy = newgoal_->path.poses.at(point_now_).position.y + newgoal_->path.poses.at(point_now_).position.y - newgoal_->path.poses.at(point_now_ - 1).position.y;
-            tangle = atan2(yy - y_, xx - x_);
-            setASpeedWithAcc((tangle - yaw_) * 2);
-            setLSpeedWithAcc(point_data_.at(point_now_).path_speed);
+            if(point_now_ != 0)
+            {
+                forward_x = newgoal_->path.poses.at(point_now_).position.x + (newgoal_->path.poses.at(point_now_).position.x - newgoal_->path.poses.at(point_now_ - 1).position.x) * 0.2 / point_data_.at(0).length;
+                forward_y = newgoal_->path.poses.at(point_now_).position.y + (newgoal_->path.poses.at(point_now_).position.y - newgoal_->path.poses.at(point_now_ - 1).position.y) * 0.2 / point_data_.at(0).length;
+            }
+            else
+            {
+                forward_x = newgoal_->path.poses.at(point_now_).position.x + newgoal_->path.poses.at(point_now_).position.x - start_x;
+                forward_y = newgoal_->path.poses.at(point_now_).position.y + newgoal_->path.poses.at(point_now_).position.y - start_y;
+            }
+            
+            tangle = atan2(forward_y - y_, forward_x - x_);
 
+            if(tangle - yaw_ > M_PI) aspeed = (tangle - yaw_ - 2 * M_PI) * 2;
+            else if(tangle - yaw_ < -M_PI) aspeed = (tangle - yaw_ + 2 * M_PI) * 2;
+            else aspeed = (tangle - yaw_) * 2;
+            if(aspeed > 0.5) aspeed = 0.5;
+            else if(aspeed < -0.5) aspeed = -0.5;
+            setASpeedWithAcc(aspeed);
+            if(point_now_ == point_end_ - 1)
+            {
+                setLSpeedWithAcc(0.01);
+            }
+            else
+            {
+                setLSpeedWithAcc(point_data_.at(point_now_).path_speed);
+            }
 
-
+            if(point_now_ == point_end_ - 1 &&  PointIsAheadOfLine((Line){{newgoal_->path.poses.at(point_now_ - 1).position.x, newgoal_->path.poses.at(point_now_ - 1).position.y},\
+                                            {newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y}}, \
+                                    (Point){x_, y_}))
+            {
+                setAllSpeedZero();
+                StepChange(STEP_WAITING);
+            }
+            break;
+        case STEP_WAITING:
+            printf("point:%d x_:%0.4f y_:%0.4f px:%0.4f py:%0.4f\r\n", point_now_, x_, y_, newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y);
             break;
         case STEP_ERROR:
             break;
