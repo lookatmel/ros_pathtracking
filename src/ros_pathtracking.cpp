@@ -6,7 +6,7 @@
 using namespace std;
 
 ROSPathTracking::ROSPathTracking()
-    :as_(NULL)
+    :as_(NULL),ctrl_frequency_(50),max_path_err_(0.05)
 {
     ros::NodeHandle nh_private("~");
 	nh_private.param<std::string>("laser_topic", laser_topic_, "/scan");
@@ -61,11 +61,11 @@ ROSPathTracking::ROSPathTracking()
 
 
     cmd_pub_ = nh_.advertise<geometry_msgs::Twist>(cmd_vel_topic_, 10);
-    pose_pub_ = nh_.advertise<geometry_msgs::PoseArray>("posearray", 10);
+    pose_pub_ = nh_private.advertise<geometry_msgs::PoseArray>("posearray", 10);
 
-    as_ = new PathTracking_Server(nh_, "AutoCharge_Server", boost::bind(&ROSPathTracking::executeCB, this, _1), false);
+    as_ = new PathTracking_Server(nh_, "PathTracking_Server", boost::bind(&ROSPathTracking::executeCB, this, _1), false);
     as_->start();
-    ROS_INFO("Created!");
+    ROS_INFO("PathTracking Action Created!");
 }
 
 ROSPathTracking::~ROSPathTracking()
@@ -104,9 +104,9 @@ void ROSPathTracking::start()
     dec_distance_ = 0;
 
     max_lacc_ = 1;
-    lacc_ = 0.1;
+    lacc_ = 0.05;
     max_ldec_ = 1;
-    ldec_ = 0.2;
+    ldec_ = 0.1;
 
     max_lspeed_ = 0.3;
     min_lspeed_ = 0.01;
@@ -150,11 +150,11 @@ void ROSPathTracking::executeCB(const ros_pathtracking::pathtrackingGoalConstPtr
     newgoal_ = goal;
     ROS_INFO("Got a Goal:%d", newgoal_->startmode);
     start();
-    setLSpeedAccParam(0.1,0.2);
+    setLSpeedAccParam(0.1,0.5);
     // setASpeedAccParam(3.14/8, 3.14/1);
     setASpeedAccParam(3.14/1, 3.14/1);
 
-    ros::Rate r(100);
+    ros::Rate r(ctrl_frequency_);
     while(1)
     {
         if(!ros::ok() || !as_->isActive())
@@ -218,10 +218,13 @@ void ROSPathTracking::executeCB(const ros_pathtracking::pathtrackingGoalConstPtr
 
 void ROSPathTracking::PathMotionHandler()
 {
-    double tangle = 0;
+    double tangle = 0, dangle = 0;
     double forward_x = 0, forward_y = 0;
+    double forward_distance = 0, forward_v1x = 0, forward_v1y = 0, forward_v2x = 0, forward_v2y = 0, forward_vx = 0, forward_vy = 0;
     static double start_x, start_y, start_yaw;
     float aspeed = 0;
+    geometry_msgs::Pose pp;
+    tf::Quaternion quat;
     geometry_msgs::PoseArray posearray_tmp;
     try
     {
@@ -307,23 +310,28 @@ void ROSPathTracking::PathMotionHandler()
             start_y = y_;
             start_yaw = yaw_;
 
-            // pose_pub_.publish(newgoal_->path);
-            //*********验证当前位置在路径中还是路径前************
-            // PointIsAheadOfLine((Line){{newgoal_->path.poses.at(0).position.x - (newgoal_->path.poses.at(1).position.x - newgoal_->path.poses.at(0).position.x)},\
-            //                             {newgoal_->path.poses.at(0).position.y - (newgoal_->path.poses.at(1).position.y - newgoal_->path.poses.at(0).position.y)}}, \
-            //                     (Point){x_, y_});
+            //************************publish path***************
+            quat.setRPY(0, 0, atan2(newgoal_->path.poses.at(0).position.y - y_, newgoal_->path.poses.at(0).position.x - x_));
+            pp.orientation.x = quat.getX();
+            pp.orientation.y = quat.getY();
+            pp.orientation.z = quat.getZ();
+            pp.orientation.w = quat.getW();
+            pp.position.x = x_;
+            pp.position.y = y_;
+            pp.position.z = 0.1;
+            posearray_tmp.header.frame_id = "/map";
+            posearray_tmp.poses.push_back(pp);
+            posearray_tmp.poses.insert(posearray_tmp.poses.end(), newgoal_->path.poses.cbegin(), newgoal_->path.poses.cend());
+            pose_pub_.publish(posearray_tmp);
+            //*************************publish path end*************
+
             //*******Calculate distance and angle of now position to point 0
-            // point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(0).position.x - x_, 2) \
-            //                                         + pow(newgoal_->path.poses.at(0).position.y - y_, 2)), \
-            //                                     0, 0, 0, \
-            //                                     calPathAngle((Point){x_, y_}, (Point){newgoal_->path.poses.at(0).position.x, newgoal_->path.poses.at(0).position.y}), \
-            //                                     0});
             point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(0).position.x - x_, 2) \
                                                     + pow(newgoal_->path.poses.at(0).position.y - y_, 2)), \
                                                 0, 0, 0, \
                                                 calPathAngle((Point){start_x, start_y},\
                                                                     (Point){newgoal_->path.poses.at(0).position.x, newgoal_->path.poses.at(0).position.y}), \
-                                                0});
+                                                0, 0, 0});
             //***********Calculate distance and angle of single path
             for(uint32_t i = 1; i < point_end_; i++)
             {
@@ -332,23 +340,36 @@ void ROSPathTracking::PathMotionHandler()
                                                     0, 0, 0,\
                                                     calPathAngle((Point){newgoal_->path.poses.at(i - 1).position.x, newgoal_->path.poses.at(i - 1).position.y},\
                                                                     (Point){newgoal_->path.poses.at(i).position.x, newgoal_->path.poses.at(i).position.y}), \
-                                                    0});
+                                                    0, 0, 0});
             }
             cout << newgoal_->path.poses.size() << endl;
             cout << point_data_.size() << endl;
             //***********Calculate difference angle and point speed
             for(uint32_t i = 0; i < point_end_ - 1; ++i)
             {
+                double path_err_sin = 0;
+                double diff_tmp = 0, diff_limit = 0;
                 if(i == 0)
                 {
-                    point_data_.at(0).diff_angle = (point_data_.at(0).angle - start_yaw);
-                    point_data_.at(i).point_speed = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01, fabs(point_data_.at(i).diff_angle)));
+                    // point_data_.at(0).diff_angle = (point_data_.at(0).angle - start_yaw);
+                    diff_tmp = point_data_.at(0).angle - start_yaw;
                 }
                 else
                 {
-                    point_data_.at(i).diff_angle = (point_data_.at(i).angle - point_data_.at(i - 1).angle);
-                    point_data_.at(i).point_speed = min(max_lspeed_, point_data_.at(i).length * max_aspeed_ / max(0.01, fabs(point_data_.at(i).diff_angle)));
+                    // point_data_.at(i).diff_angle = (point_data_.at(i).angle - point_data_.at(i - 1).angle);
+                    diff_tmp = point_data_.at(i).angle - point_data_.at(i - 1).angle;
                 }
+                if(diff_tmp > M_PI) diff_tmp -= 2 * M_PI;
+                else if(diff_tmp < -M_PI) diff_tmp += 2 * M_PI;
+                point_data_.at(i).diff_angle = diff_tmp;
+                diff_limit = fabs(diff_tmp) > M_PI / 2 ? M_PI / 2 : fabs(diff_tmp);
+
+                path_err_sin = 0.5 * sin(diff_limit) * tan(M_PI/2 - max_aspeed_ * 1 / ctrl_frequency_ / 2) - \
+                                pow(sin(diff_limit / 2), 2);
+                point_data_.at(i).path_err_sin = path_err_sin;
+                point_data_.at(i).limit_of_turn = min(max_lspeed_, (path_err_sin < 0.01 ? max_lspeed_ : (max_path_err_ / (1.0 / ctrl_frequency_) / path_err_sin)));
+
+                point_data_.at(i).point_speed = min(point_data_.at(i).limit_of_turn, point_data_.at(i).length * max_aspeed_ / max(0.01, fabs(diff_tmp)));
             }
             //***********Calculate raw path speed through dec (from end to start)
             for(int32_t i = point_end_ - 2; i >= 0; --i)
@@ -374,12 +395,23 @@ void ROSPathTracking::PathMotionHandler()
             point_now_ = 0;
             for(auto i = point_data_.cbegin(); i != point_data_.cend(); i++)
             {
-                printf("%0.4f  %0.4f  %0.4f %0.4f\r\n", i->angle, i->diff_angle, i->path_speed, i->length);
+                printf("%0.4f  %0.4f  %0.4f %0.4f %0.4f %0.4f\r\n", i->angle, i->diff_angle, i->length, i->path_err_sin,i->limit_of_turn, i->path_speed);
             }
             printf("end point: x:%0.4f y:%0.4f\r\n", (newgoal_->path.poses.cend() - 1)->position.x, (newgoal_->path.poses.cend() - 1)->position.y);
             printf("point speed:%0.4f path raw speed:%0.4f path speed:%0.4f\r\n", (point_data_.cbegin())->point_speed, (point_data_.cbegin())->raw_path_speed, (point_data_.cbegin())->path_speed);
             printf("point speed:%0.4f path raw speed:%0.4f path speed:%0.4f\r\n", (point_data_.cend()-1)->point_speed, (point_data_.cend()-1)->raw_path_speed, (point_data_.cend()-1)->path_speed);
             StepChange(STEP_TRACKING);
+
+            if(point_data_.at(point_now_).path_speed < min_lspeed_)
+            {
+                motion_state_ = 0;
+                motion_lspeed_ = point_data_.at(point_now_ + 1).path_speed;
+            }
+            else
+            {
+                motion_state_ = 2;
+                motion_lspeed_ = point_data_.at(point_now_).path_speed;
+            }
             break;
         case STEP_TRACKING:
 
@@ -391,7 +423,9 @@ void ROSPathTracking::PathMotionHandler()
                     if(!PointIsAheadOfLine((Line){{start_x, start_y},\
                                             {newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y}}, \
                                             (Point){x_, y_}))
-                    break;
+                    {
+                        break;
+                    }
                 }
                 else if(!PointIsAheadOfLine((Line){{newgoal_->path.poses.at(point_now_ - 1).position.x, newgoal_->path.poses.at(point_now_ - 1).position.y},\
                                             {newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y}}, \
@@ -399,60 +433,99 @@ void ROSPathTracking::PathMotionHandler()
                 {
                     break;
                 }
+
                 point_now_++;
+                if(point_now_ == point_end_ - 1)
+                {
+                    motion_state_ = 2;
+                    motion_lspeed_ = min_lspeed_;
+                }
+                else
+                {
+                    if(point_data_.at(point_now_).path_speed < min_lspeed_)
+                    {
+                        motion_state_ = 0;
+                        motion_lspeed_ = point_data_.at(point_now_ + 1).path_speed;
+                    }
+                    else if(point_data_.at(point_now_ + 1).path_speed < point_data_.at(point_now_).path_speed && point_data_.at(point_now_ + 1).path_speed > min_lspeed_)
+                    {
+                        motion_state_ = 2;
+                        motion_lspeed_ = point_data_.at(point_now_ + 1).path_speed;
+                    }
+                    else
+                    {
+                        motion_state_ = 2;
+                        motion_lspeed_ = point_data_.at(point_now_).path_speed;
+                    }
+                }
+                printf("point update!\r\n");
             }
 
-            printf("point:%d x_:%0.4f y_:%0.4f px:%0.4f py:%0.4f\r\n", point_now_, x_, y_, newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y);
-            
-            //************************计算规划距离是否满足dec-distance
-            // auto pos_to_target = sqrt(pow(newgoal_->path.poses.at(point_now_).position.x - x_, 2) \
-            //                             + pow(newgoal_->path.poses.at(point_now_).position.y - y_, 2));
-
-            // planning_distance_ = pos_to_target;
-            // for(auto i = point_now_ + 1; i <= point_target_; ++i)
-            // {
-            //     if((point_now_ == 0 && point_target_ ==0) || point_now_ == point_target_) break;
-            //     planning_distance_ += point_data_.at(i).length;
-            // }
-
-            // for(; planning_distance_ < predict_distance_; )
-            // {
-            //     if(point_target_ >= point_end_) break;
-            //     point_target_++;
-            //     point_data_.push_back((PointParam){sqrt(pow(newgoal_->path.poses.at(point_target_).position.x - newgoal_->path.poses.at(point_target_ - 1).position.x, 2) \
-            //                                             + pow(newgoal_->path.poses.at(point_target_).position.y - newgoal_->path.poses.at(point_target_ - 1).position.y, 2)), \
-            //                                         0, \
-            //                                         0, 0, 0});
-            //     planning_distance_ += point_data_.at(point_target_).length;
-            // }
             //*************************速度规划
             if(point_now_ != 0)
             {
-                forward_x = newgoal_->path.poses.at(point_now_).position.x + (newgoal_->path.poses.at(point_now_).position.x - newgoal_->path.poses.at(point_now_ - 1).position.x) * 0.2 / point_data_.at(0).length;
-                forward_y = newgoal_->path.poses.at(point_now_).position.y + (newgoal_->path.poses.at(point_now_).position.y - newgoal_->path.poses.at(point_now_ - 1).position.y) * 0.2 / point_data_.at(0).length;
+                forward_x = newgoal_->path.poses.at(point_now_).position.x + \
+                            (newgoal_->path.poses.at(point_now_).position.x - newgoal_->path.poses.at(point_now_ - 1).position.x) * \
+                            0.5 / point_data_.at(point_now_).length;
+                forward_y = newgoal_->path.poses.at(point_now_).position.y + \
+                            (newgoal_->path.poses.at(point_now_).position.y - newgoal_->path.poses.at(point_now_ - 1).position.y) * \
+                            0.5 / point_data_.at(point_now_).length;
+
+                // forward_distance = sqrt(pow(newgoal_->path.poses.at(point_now_).position.x - x_, 2) + \
+                //                     pow(newgoal_->path.poses.at(point_now_).position.y - y_, 2));
+                // forward_v1x = (newgoal_->path.poses.at(point_now_).position.x - x_) / forward_distance;
+                // forward_v1y = (newgoal_->path.poses.at(point_now_).position.y - y_) / forward_distance;
+
+                // forward_v2x = (newgoal_->path.poses.at(point_now_).position.x - newgoal_->path.poses.at(point_now_ - 1).position.x) / \
+                //                 point_data_.at(point_now_).length;
+                // forward_v2y = (newgoal_->path.poses.at(point_now_).position.y - newgoal_->path.poses.at(point_now_ - 1).position.y) / \
+                //                 point_data_.at(point_now_).length;
+                // forward_x = newgoal_->path.poses.at(point_now_).position.x + \
+                //             (forward_v1x + forward_v2x) * 2;
+                // forward_y = newgoal_->path.poses.at(point_now_).position.y + \
+                //             (forward_v1y + forward_v2y) * 2;
             }
             else
             {
-                forward_x = newgoal_->path.poses.at(point_now_).position.x + newgoal_->path.poses.at(point_now_).position.x - start_x;
-                forward_y = newgoal_->path.poses.at(point_now_).position.y + newgoal_->path.poses.at(point_now_).position.y - start_y;
+                forward_x = newgoal_->path.poses.at(point_now_).position.x + \
+                            (newgoal_->path.poses.at(point_now_).position.x - start_x) * 1 / point_data_.at(point_now_).length;
+                forward_y = newgoal_->path.poses.at(point_now_).position.y + \
+                            (newgoal_->path.poses.at(point_now_).position.y - start_y) * 1 / point_data_.at(point_now_).length;
             }
             
             tangle = atan2(forward_y - y_, forward_x - x_);
 
-            if(tangle - yaw_ > M_PI) aspeed = (tangle - yaw_ - 2 * M_PI) * 2;
-            else if(tangle - yaw_ < -M_PI) aspeed = (tangle - yaw_ + 2 * M_PI) * 2;
-            else aspeed = (tangle - yaw_) * 2;
+            if(tangle - yaw_ > M_PI) dangle = tangle - yaw_ - 2 * M_PI;
+            else if(tangle - yaw_ < -M_PI) dangle = tangle - yaw_ + 2 * M_PI;
+            else dangle = tangle - yaw_;
+
+            aspeed = dangle * 5;
             if(aspeed > 0.5) aspeed = 0.5;
             else if(aspeed < -0.5) aspeed = -0.5;
             setASpeedWithAcc(aspeed);
-            if(point_now_ == point_end_ - 1)
+
+            switch(motion_state_)
             {
-                setLSpeedWithAcc(0.01);
+                case 0 :
+                    setLSpeedWithAcc(0);
+                    if(fabs(dangle) < 0.1) motion_state_ = 1;
+                    break;
+                case 1:
+                    setLSpeedWithAcc(motion_lspeed_);
+                    break;
+                case 2:
+                    setLSpeedWithAcc(motion_lspeed_);
+                    break;
             }
-            else
-            {
-                setLSpeedWithAcc(point_data_.at(point_now_).path_speed);
-            }
+
+            // if(point_now_ == point_end_ - 1)
+            // {
+            //     setLSpeedWithAcc(0.001);
+            // }
+            // else
+            // {
+            //     setLSpeedWithAcc(point_data_.at(point_now_).path_speed);
+            // }
 
             if(point_now_ == point_end_ - 1 &&  PointIsAheadOfLine((Line){{newgoal_->path.poses.at(point_now_ - 1).position.x, newgoal_->path.poses.at(point_now_ - 1).position.y},\
                                             {newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y}}, \
@@ -461,9 +534,23 @@ void ROSPathTracking::PathMotionHandler()
                 setAllSpeedZero();
                 StepChange(STEP_WAITING);
             }
+            printf("point:%d x_:%0.4f y_:%0.4f px:%0.4f py:%0.4f fx:%0.4f fy:%0.4f\r\n", \
+                    point_now_, x_, y_, \
+                    newgoal_->path.poses.at(point_now_).position.x, \
+                    newgoal_->path.poses.at(point_now_).position.y,\
+                    forward_x, forward_y);
             break;
         case STEP_WAITING:
-            printf("point:%d x_:%0.4f y_:%0.4f px:%0.4f py:%0.4f\r\n", point_now_, x_, y_, newgoal_->path.poses.at(point_now_).position.x, newgoal_->path.poses.at(point_now_).position.y);
+            // printf("point:%d x_:%0.4f y_:%0.4f px:%0.4f py:%0.4f\r\n", \
+            //         point_now_, x_, y_, \
+            //         newgoal_->path.poses.at(point_now_).position.x, \
+            //         newgoal_->path.poses.at(point_now_).position.y);
+
+            printf("point:%d x_:%0.4f y_:%0.4f px:%0.4f py:%0.4f fx:%0.4f fy:%0.4f\r\n", \
+                    point_now_, x_, y_, \
+                    newgoal_->path.poses.at(point_now_).position.x, \
+                    newgoal_->path.poses.at(point_now_).position.y,\
+                    forward_x, forward_y);
             break;
         case STEP_ERROR:
             break;
@@ -714,12 +801,10 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
             }
         }
         ROS_INFO("laser size:%ld , obstacle size:%ld", scan.ranges.size(), obstacle_thr.size());
-        for(auto i = obstacle_thr.cbegin(); i != obstacle_thr.cend(); ++i)
-        {
-            printf("%0.5f\r\n", *i); 
-        }
-        
-        
+        // for(auto i = obstacle_thr.cbegin(); i != obstacle_thr.cend(); ++i)
+        // {
+        //     printf("%0.5f\r\n", *i); 
+        // }
         scan_ready_ = 1;
     }
 

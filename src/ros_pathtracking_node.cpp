@@ -26,7 +26,6 @@ int main(int argc, char **argv)
     ros::NodeHandle nh;
     signal(SIGINT, mySigIntHandler);
     ROSPathTracking path;
-
     ros::spin();
     exit(0) ;
 }

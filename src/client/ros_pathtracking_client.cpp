@@ -46,7 +46,7 @@ void feedbackCallback(const ros_pathtracking::pathtrackingFeedbackConstPtr &feed
 
 void mySigIntHandler(int sig)
 {
-    ROS_INFO("close ros_autocharge!\r\n");
+    ROS_INFO("close pathtracking_client!\r\n");
     // ac_->cancelAllGoals();
     goal.startmode = 1;
     ac_->sendGoal(goal, doneCallback, activeCallback, feedbackCallback);
@@ -57,11 +57,11 @@ void mySigIntHandler(int sig)
 
 int main(int argc, char **argv)
 {
-    ros::init(argc,argv,"action_test_client",ros::init_options::NoSigintHandler); 
-    ros::NodeHandle nh;
+    ros::init(argc,argv,"pathtracking_client",ros::init_options::NoSigintHandler); 
+    ros::NodeHandle nh("~");
     ros::Publisher posearr_pub_ = nh.advertise<geometry_msgs::PoseArray>("posearray", 10);
     ros::Publisher pose_pub_ = nh.advertise<geometry_msgs::PoseStamped>("pose", 10);
-    Client ac("AutoCharge_Server", true);
+    Client ac("PathTracking_Server", true);
     ac_ = &ac;
     ros::Duration t(10);
     ros::Rate r(1);
@@ -94,12 +94,30 @@ int main(int argc, char **argv)
     }
     for(auto i = posearray.poses.begin(); i != posearray.poses.cend(); ++i)
     {
-        if(i == posearray.poses.cend())
+        if(i == posearray.poses.cend() - 1)
         {
             i->orientation.x = (i - 1)->orientation.x;
             i->orientation.y = (i - 1)->orientation.y;
             i->orientation.z = (i - 1)->orientation.z;
             i->orientation.w = (i - 1)->orientation.w;
+            break;
+        }
+        quat.setRPY(0, 0, atan2((i + 1)->position.y - i->position.y, (i + 1)->position.x - i->position.x));
+        i->orientation.x = quat.getX();
+        i->orientation.y = quat.getY();
+        i->orientation.z = quat.getZ();
+        i->orientation.w = quat.getW();
+    }
+
+    for(auto i = goal.path.poses.begin(); i != goal.path.poses.cend(); ++i)
+    {
+        if(i == goal.path.poses.cend() - 1)
+        {
+            i->orientation.x = (i - 1)->orientation.x;
+            i->orientation.y = (i - 1)->orientation.y;
+            i->orientation.z = (i - 1)->orientation.z;
+            i->orientation.w = (i - 1)->orientation.w;
+            break;
         }
         quat.setRPY(0, 0, atan2((i + 1)->position.y - i->position.y, (i + 1)->position.x - i->position.x));
         i->orientation.x = quat.getX();

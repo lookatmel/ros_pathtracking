@@ -2,11 +2,19 @@
 #define ROS_PATHTRACKING_H
 
 #include "ros/ros.h" 
+#include "serial/serial.h"
+
 #include "tf/transform_broadcaster.h"
 #include "tf/transform_listener.h"
-#include <serial/serial.h>
+
 #include "sensor_msgs/LaserScan.h"
-#include <actionlib/server/simple_action_server.h>
+
+#include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PoseArray.h"
+#include "geometry_msgs/PoseStamped.h"
+
+#include "actionlib/server/simple_action_server.h"
+
 #include "ros_pathtracking/pathtrackingAction.h"
 
 
@@ -153,6 +161,7 @@ class ROSPathTracking
         bool wait_stable_;
         bool moveback_;
         bool scan_ready_;
+        uint8_t motion_state_;
 
         float target_speed, target_aspeed, target_angle;
         float facc, fdec, bacc, bdec;
@@ -164,6 +173,9 @@ class ROSPathTracking
         double planning_time_;
         double max_lacc_, lacc_, max_aacc_, aacc_, max_ldec_, ldec_, max_adec_, adec_;
         double max_lspeed_, min_lspeed_, max_aspeed_, min_aspeed_;
+        double motion_lspeed_;
+        uint32_t ctrl_frequency_;
+        double max_path_err_;
         struct PointParam
         {
             double length;
@@ -172,6 +184,8 @@ class ROSPathTracking
             double path_speed;
             double angle;
             double diff_angle;
+            double limit_of_turn;
+            double path_err_sin;
         };
         std::vector<PointParam> point_data_;
 
