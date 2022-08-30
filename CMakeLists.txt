@@ -221,12 +221,16 @@ include_directories(
 
 
 aux_source_directory(./src DIR_SRCS)
-add_executable(ros_pathtracking ${DIR_SRCS})
+add_executable(ros_pathtracking src/ros_pathtracking.cpp src/ros_pathtracking_node.cpp)
 add_dependencies(ros_pathtracking ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(ros_pathtracking  ${catkin_LIBRARIES} yaml-cpp)
 
-add_executable(ros_pathtracking_client src/client/ros_pathtracking_client.cpp)
-add_dependencies(ros_pathtracking_client ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(ros_pathtracking_client  ${catkin_LIBRARIES})
+add_executable(sin_client src/client/sin_client.cpp)
+add_dependencies(sin_client ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(sin_client  ${catkin_LIBRARIES})
+
+add_executable(ros_pathrecord src/ros_pathrecord.cpp)
+add_dependencies(ros_pathrecord ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(ros_pathrecord  ${catkin_LIBRARIES})
 
 #add_subdirectory(src/yaml-cpp)
