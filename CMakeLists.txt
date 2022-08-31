@@ -233,4 +233,8 @@ add_executable(ros_pathrecord src/ros_pathrecord.cpp)
 add_dependencies(ros_pathrecord ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(ros_pathrecord  ${catkin_LIBRARIES})
 
+add_executable(ros_pathpublish src/ros_pathpublish.cpp)
+add_dependencies(ros_pathpublish ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(ros_pathpublish  ${catkin_LIBRARIES})
+
 #add_subdirectory(src/yaml-cpp)
