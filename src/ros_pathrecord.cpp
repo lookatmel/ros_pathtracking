@@ -122,7 +122,7 @@ int main(int argc, char **argv)
                     z_last = z;
                     yaw_last = yaw;
                 }
-                else if(sqrt(pow(x_last - x, 2) + pow(y_last - y, 2)) >= 0.2)
+                else if(sqrt(pow(x_last - x, 2) + pow(y_last - y, 2)) >= 0.1)
                 {
                     posearray.header.frame_id = "map";
                     posearray.header.stamp = ros::Time::now();

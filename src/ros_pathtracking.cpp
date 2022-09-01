@@ -6,7 +6,7 @@
 using namespace std;
 
 ROSPathTracking::ROSPathTracking()
-    :as_(NULL),ctrl_frequency_(50),max_path_err_(0.05)
+    :as_(NULL),ctrl_frequency_(50),max_path_err_(0.1)
 {
     ros::NodeHandle nh_private("~");
 	nh_private.param<std::string>("laser_topic", laser_topic_, "/scan");
@@ -16,6 +16,16 @@ ROSPathTracking::ROSPathTracking()
     nh_private.param<std::string>("laser_id", laser_frame_id_, "/laser"); 
     nh_private.param<std::string>("map_id", map_frame_id_, "/map"); 
 
+    nh_private.param<int>("control_frequency", ctrl_frequency_, 50); 
+    nh_private.param<double>("turn_index", turn_index_, 1.0); 
+    nh_private.param<double>("path_err", max_path_err_, 0.1); 
+    nh_private.param<double>("max_lspeed", max_lspeed_, 0.7); 
+    nh_private.param<double>("min_lspeed", min_lspeed_, 0.01); 
+    nh_private.param<double>("max_aspeed", max_aspeed_, 0.6); 
+    nh_private.param<double>("lacc", lacc_, 0.2); 
+    nh_private.param<double>("ldec", ldec_, 0.2); 
+    nh_private.param<double>("max_lacc", max_lacc_, 0.2); 
+    nh_private.param<double>("max_ldec", max_ldec_, 0.2); 
 
     nh_private.param<float>("visual_angle", visual_angle_, VISUAL_ANGLE); 
     nh_private.param<float>("round_distance", round_distance_, ROUND_DISTANCE); 
@@ -29,36 +39,54 @@ ROSPathTracking::ROSPathTracking()
     nh_private.param<float>("pretouch_distance", pretouch_distance_, PRETOUCH_DISTANCE); 
     nh_private.param<float>("moveback_distance", moveback_distance_, MOVEBACK_DISTANCE);
     nh_private.param<std::string>("movebase_polygon", movebase_polygon_str_, "[[0.29,-0.22],[0.29,0.22],[-0.29,0.22],[-0.29,-0.22]]"); 
+    nh_private.param<std::string>("movebase_polygon2", movebase_polygon2_str_, "[[0.49,-0.22],[0.49,0.22],[-0.49,0.22],[-0.49,-0.22]]"); 
 
-    YAML::Node node = YAML::Load(movebase_polygon_str_);
-    for (YAML::const_iterator i = node.begin(); i != node.end(); ++i)
+    cout << "polygon init:" << movebase_polygon_str_ << endl;
+    cout << "polygon2 init:" << movebase_polygon2_str_ << endl;
+
+    YAML::Node node1 = YAML::Load(movebase_polygon_str_);
+    YAML::Node node2 = YAML::Load(movebase_polygon2_str_);
+    for (YAML::const_iterator i = node1.begin(); i != node1.end(); ++i)
     {
         float tmp[2];
-        float *tmpaddr;
         if(i->size() != 2)
         {
-            ROS_ERROR("polygon param error!");
+            ROS_ERROR("polygon1 param error!");
             ros::shutdown();
             return;
         }
-        cout << "[";
-        for(size_t k = 0; k < 2; ++k)
+        tmp[0] = i->as<vector<float>>().at(0);
+        tmp[1] = i->as<vector<float>>().at(1);
+        movebase_polygon1_.push_back({tmp[0], tmp[1]});
+    }
+
+    for (YAML::const_iterator i = node2.begin(); i != node2.end(); ++i)
+    {
+        float tmp[2];
+        if(i->size() != 2)
         {
-            tmp[k] = (*i)[k].as<float>();
-            cout << fixed << setprecision(2) << (*i)[k].as<float>() << ",";
+            ROS_ERROR("polygon2 param error!");
+            ros::shutdown();
+            return;
         }
-        cout << "\b";
-        cout << "],";
-        tmpaddr = new float[2]{tmp[0], tmp[1]};
-        movebase_polygon_.push_back(tmpaddr);
+        tmp[0] = i->as<vector<float>>().at(0);
+        tmp[1] = i->as<vector<float>>().at(1);
+        movebase_polygon2_.push_back({tmp[0], tmp[1]});
+    }
+
+    cout << "polygon1:" ;
+    for(auto i = movebase_polygon1_.begin(); i != movebase_polygon1_.cend(); ++i)
+    {
+        cout << "[" << i->at(0) << "," << i->at(1) << "],";
     }
     cout << "\b \b\r\n" << endl;
-    for(auto i = movebase_polygon_.begin(); i != movebase_polygon_.end(); ++i)
-    {
-        cout << "[" << (float)(*i)[0] << "," << (float)(*i)[1] << "],";
-    }
-    cout << "\b\r\n" << endl;
 
+    cout << "polygon2:" ;
+    for(auto i = movebase_polygon2_.begin(); i != movebase_polygon2_.cend(); ++i)
+    {
+        cout << "[" << i->at(0) << "," << i->at(1) << "],";
+    }
+    cout << "\b \b\r\n" << endl;
 
     cmd_pub_ = nh_.advertise<geometry_msgs::Twist>(cmd_vel_topic_, 10);
     pose_pub_ = nh_private.advertise<geometry_msgs::PoseArray>("posearray", 10);
@@ -100,17 +128,9 @@ void ROSPathTracking::start()
     point_target_ = 0;
     point_end_ = 0;
     point_cal_ = 0;
+
     planning_distance_ = 0;
     dec_distance_ = 0;
-
-    max_lacc_ = 1;
-    lacc_ = 0.05;
-    max_ldec_ = 1;
-    ldec_ = 0.1;
-
-    max_lspeed_ = 0.3;
-    min_lspeed_ = 0.01;
-    max_aspeed_ = 0.2;
 
     planning_time_ = 1.0;
 
@@ -150,9 +170,9 @@ void ROSPathTracking::executeCB(const ros_pathtracking::pathtrackingGoalConstPtr
     newgoal_ = goal;
     ROS_INFO("Got a Goal:%d", newgoal_->startmode);
     start();
-    setLSpeedAccParam(0.1,0.5);
+    setLSpeedAccParam(0.5,0.7);
     // setASpeedAccParam(3.14/8, 3.14/1);
-    setASpeedAccParam(3.14/1, 3.14/1);
+    setASpeedAccParam(3.14/4, 3.14/1);
 
     ros::Rate r(ctrl_frequency_);
     while(1)
@@ -279,7 +299,7 @@ void ROSPathTracking::PathMotionHandler()
                 if(obstacle_overtime_.toSec() > 20)
                 {
                     StepChange(STEP_ERROR);
-                    ROS_INFO("Charge fail because of obstacle!");
+                    ROS_INFO("tracking fail because of obstacle!");
                 }
             }
             else if(tf_rev_ != 1)
@@ -287,15 +307,15 @@ void ROSPathTracking::PathMotionHandler()
                 map_tf_overtime_ += period_;
                 if(map_tf_overtime_.toSec() > 2)
                 {
-                    StepChange(STEP_PARAM_INIT);
+                    StepChange(STEP_ERROR);
                     search_time_ = ros::Time::now();
-                    ROS_INFO("Charge Searching!");
+                    ROS_INFO("tf error!");
                 }
             }
             else if(tf_rev_ == 1)
             {
                 StepChange(STEP_PARAM_INIT);
-                ROS_INFO("Charge Around!");
+                ROS_INFO("tracking start!");
             }
             setLSpeed(0);
             setASpeed(0);
@@ -398,8 +418,8 @@ void ROSPathTracking::PathMotionHandler()
                 printf("%0.4f  %0.4f  %0.4f %0.4f %0.4f %0.4f\r\n", i->angle, i->diff_angle, i->length, i->path_err_sin,i->limit_of_turn, i->path_speed);
             }
             printf("end point: x:%0.4f y:%0.4f\r\n", (newgoal_->path.poses.cend() - 1)->position.x, (newgoal_->path.poses.cend() - 1)->position.y);
-            printf("point speed:%0.4f path raw speed:%0.4f path speed:%0.4f\r\n", (point_data_.cbegin())->point_speed, (point_data_.cbegin())->raw_path_speed, (point_data_.cbegin())->path_speed);
-            printf("point speed:%0.4f path raw speed:%0.4f path speed:%0.4f\r\n", (point_data_.cend()-1)->point_speed, (point_data_.cend()-1)->raw_path_speed, (point_data_.cend()-1)->path_speed);
+            printf("start point speed:%0.4f path raw speed:%0.4f path speed:%0.4f\r\n", (point_data_.cbegin())->point_speed, (point_data_.cbegin())->raw_path_speed, (point_data_.cbegin())->path_speed);
+            printf("end point speed:%0.4f path raw speed:%0.4f path speed:%0.4f\r\n", (point_data_.cend()-1)->point_speed, (point_data_.cend()-1)->raw_path_speed, (point_data_.cend()-1)->path_speed);
             StepChange(STEP_TRACKING);
 
             if(point_data_.at(point_now_).path_speed < min_lspeed_)
@@ -440,6 +460,11 @@ void ROSPathTracking::PathMotionHandler()
                     motion_state_ = 2;
                     motion_lspeed_ = min_lspeed_;
                 }
+                else if(point_now_ == 1)
+                {
+                    motion_state_ = 0;
+                    motion_lspeed_ = point_data_.at(point_now_ + 1).path_speed;
+                }
                 else
                 {
                     if(point_data_.at(point_now_).path_speed < min_lspeed_)
@@ -466,10 +491,10 @@ void ROSPathTracking::PathMotionHandler()
             {
                 forward_x = newgoal_->path.poses.at(point_now_).position.x + \
                             (newgoal_->path.poses.at(point_now_).position.x - newgoal_->path.poses.at(point_now_ - 1).position.x) * \
-                            0.5 / point_data_.at(point_now_).length;
+                            0.2 / point_data_.at(point_now_).length;
                 forward_y = newgoal_->path.poses.at(point_now_).position.y + \
                             (newgoal_->path.poses.at(point_now_).position.y - newgoal_->path.poses.at(point_now_ - 1).position.y) * \
-                            0.5 / point_data_.at(point_now_).length;
+                            0.2 / point_data_.at(point_now_).length;
 
                 // forward_distance = sqrt(pow(newgoal_->path.poses.at(point_now_).position.x - x_, 2) + \
                 //                     pow(newgoal_->path.poses.at(point_now_).position.y - y_, 2));
@@ -488,9 +513,23 @@ void ROSPathTracking::PathMotionHandler()
             else
             {
                 forward_x = newgoal_->path.poses.at(point_now_).position.x + \
-                            (newgoal_->path.poses.at(point_now_).position.x - start_x) * 1 / point_data_.at(point_now_).length;
+                            (newgoal_->path.poses.at(point_now_).position.x - start_x) * 0.5 / point_data_.at(point_now_).length;
                 forward_y = newgoal_->path.poses.at(point_now_).position.y + \
-                            (newgoal_->path.poses.at(point_now_).position.y - start_y) * 1 / point_data_.at(point_now_).length;
+                            (newgoal_->path.poses.at(point_now_).position.y - start_y) * 0.5 / point_data_.at(point_now_).length;
+            }
+
+            if(have_obstacle_)
+            {
+                setWaitStable(1);
+                setLSpeed(0);
+                setASpeed(0);
+                break;
+            }
+            if(!isStable())
+            {
+                setLSpeed(0);
+                setASpeed(0);
+                break;
             }
             
             tangle = atan2(forward_y - y_, forward_x - x_);
@@ -499,9 +538,9 @@ void ROSPathTracking::PathMotionHandler()
             else if(tangle - yaw_ < -M_PI) dangle = tangle - yaw_ + 2 * M_PI;
             else dangle = tangle - yaw_;
 
-            aspeed = dangle * 5;
-            if(aspeed > 0.5) aspeed = 0.5;
-            else if(aspeed < -0.5) aspeed = -0.5;
+            aspeed = dangle * 1;
+            if(aspeed > max_aspeed_) aspeed = max_aspeed_;
+            else if(aspeed < -max_aspeed_) aspeed = -max_aspeed_;
             setASpeedWithAcc(aspeed);
 
             switch(motion_state_)
@@ -511,10 +550,15 @@ void ROSPathTracking::PathMotionHandler()
                     if(fabs(dangle) < 0.1) motion_state_ = 1;
                     break;
                 case 1:
-                    setLSpeedWithAcc(motion_lspeed_);
-                    break;
                 case 2:
-                    setLSpeedWithAcc(motion_lspeed_);
+                    if(have_obstacle2_)
+                    {
+                        setLSpeedWithAcc(min(0.2, motion_lspeed_ * 0.5));
+                    }
+                    else
+                    {
+                        setLSpeedWithAcc(motion_lspeed_);
+                    }
                     break;
             }
 
@@ -695,8 +739,8 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
     // ROS_INFO("Scan Min Angle:%0.100f , Max Angle:%0.100f", scan_angle_min, scan_angle_max);
     static tf::StampedTransform laser_transform;
     static double laser_roll, laser_pitch, laser_yaw, laser_x, laser_y, laser_z;
-    static vector<vector<float>>polygon;
-    static vector<float>obstacle_thr;
+    static vector<vector<float>>polygon, polygon2;
+    static vector<float>obstacle_thr, obstacle_thr2;
     static unsigned int angle_division, scan_min_index, scan_max_index;
     static float scan_angle_min = 0, scan_angle_max = 0;
     static float laser_range_max = 20.0;
@@ -735,35 +779,45 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
                     scan_angle_min * 180 / M_PI, scan_angle_max * 180 /M_PI, angle_division, scan.ranges.size(), scan.angle_increment);
         
         polygon.clear();
+        polygon2.clear();
         obstacle_thr.clear();
-        if(isEqual(fabs(laser_roll / M_PI), 0))
+        obstacle_thr2.clear();
+        if(isEqual(fmod(fabs(laser_roll), 2 * M_PI), 0) || isEqual(fmod(fabs(laser_roll), 2 * M_PI), 2 * M_PI))
         {
-            for(auto i = movebase_polygon_.begin(); i != movebase_polygon_.end(); ++i)
+            ROS_INFO("laser is upright!");
+            for(auto i = movebase_polygon1_.cbegin(); i != movebase_polygon1_.cend(); ++i)
             {
-                vector<float>xy_temp;
-                xy_temp.push_back((float)(*i)[0] - laser_x);
-                xy_temp.push_back(-((float)(*i)[1] - laser_y));
-                polygon.push_back(move(xy_temp));
-
+                polygon.push_back({(float)(i->at(0) - laser_x), (float)(i->at(1) - laser_y)});
+            }
+            for(auto i = movebase_polygon2_.cbegin(); i != movebase_polygon2_.cend(); ++i)
+            {
+                polygon2.push_back({(float)(i->at(0) - laser_x), (float)(i->at(1) - laser_y)});
             }
         }
         else
         {
-            for(auto i = movebase_polygon_.begin(); i != movebase_polygon_.end(); ++i)
+            ROS_INFO("laser is reversed!");
+            for(auto i = movebase_polygon1_.cbegin(); i != movebase_polygon1_.cend(); ++i)
             {
-                vector<float>xy_temp;
-                xy_temp.push_back((float)(*i)[0] - laser_x);
-                xy_temp.push_back(((float)(*i)[1] - laser_y));
-                polygon.push_back(move(xy_temp));
+                polygon.push_back({(float)(i->at(0) - laser_x), (float)(-(i->at(1) - laser_y))});
+            }
+            for(auto i = movebase_polygon2_.cbegin(); i != movebase_polygon2_.cend(); ++i)
+            {
+                polygon2.push_back({(float)(i->at(0) - laser_x), (float)(-(i->at(1) - laser_y))});
             }
         }
 
-        cout << "obstacle polygon:";
+        cout << "obstacle polygon1:";
         for(auto i = polygon.cbegin(); i != polygon.cend(); ++i)
         {
-            cout << "[" << *(i->cbegin()) << "," <<  *(i->cbegin() + 1) << "]";
+            cout << "[" << *(i->cbegin()) << "," <<  *(i->cbegin() + 1) << "]" << endl;
         }
-        cout << "\r\n" << endl;
+
+        cout << "obstacle polygon2:";
+        for(auto i = polygon2.cbegin(); i != polygon2.cend(); ++i)
+        {
+            cout << "[" << *(i->cbegin()) << "," <<  *(i->cbegin() + 1) << "]" << endl;
+        }
 
         for(int i = 0; i < scan.ranges.size(); ++i)
         {
@@ -800,6 +854,43 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
                 }
             }
         }
+
+        for(int i = 0; i < scan.ranges.size(); ++i)
+        {
+            float angle_tmp = scan.angle_min + i * scan.angle_increment;
+            Line l1 = {{0, 0}, {laser_range_max * cos(angle_tmp), laser_range_max * sin(angle_tmp)}};
+            Line l2;
+            Point crosspoint;
+            double length;
+            for (auto j = polygon2.cbegin(); j != polygon2.cend(); ++j)
+            {
+                l2.p1.x = *(j->cbegin());
+                l2.p1.y = *(j->cbegin() + 1);
+                if(j + 1 != polygon2.cend())
+                {
+                    l2.p2.x = *((j + 1)->cbegin());
+                    l2.p2.y = *((j + 1)->cbegin() + 1);
+                }
+                else
+                {
+                    l2.p2.x = *(polygon2.cbegin()->cbegin());
+                    l2.p2.y = *(polygon2.cbegin()->cbegin() + 1);
+                }
+
+                int tmp = calCrossPoint(l1, l2, crosspoint, length);
+                if(tmp == CROSS || tmp == COLLINEATION)
+                {
+                    obstacle_thr2.push_back(length + obstacle_distance_); 
+                    break;
+                }
+                else if(j + 1 == polygon2.cend())
+                {
+                    obstacle_thr2.push_back(0);
+                    break;
+                }
+            }
+        }
+
         ROS_INFO("laser size:%ld , obstacle size:%ld", scan.ranges.size(), obstacle_thr.size());
         // for(auto i = obstacle_thr.cbegin(); i != obstacle_thr.cend(); ++i)
         // {
@@ -810,6 +901,8 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
 
     bool obstacle_temp = 0;
     int obstacle_cnt = 0;
+    bool obstacle_temp2 = 0;
+    int obstacle_cnt2 = 0;
     for(auto j = obstacle_thr.cbegin(); j != obstacle_thr.cend(); ++j)
     {
         if(scan.ranges[obstacle_cnt] < *j)
@@ -819,12 +912,19 @@ void ROSPathTracking::LaserScanCallback(const sensor_msgs::LaserScan &scan)
         obstacle_cnt++;
     }
 
+    for(auto j = obstacle_thr2.cbegin(); j != obstacle_thr2.cend(); ++j)
+    {
+        if(scan.ranges[obstacle_cnt2] < *j)
+        {
+            obstacle_temp2 |= 1;
+        }
+        obstacle_cnt2++;
+    }
 
     have_obstacle_ = obstacle_temp;
-    if(have_obstacle_)
-    {
-        ROS_INFO("have obstacle!");
-    }
+    have_obstacle2_ = obstacle_temp2;
+    if(have_obstacle_) ROS_INFO("obstacle stop!");
+    if(have_obstacle2_) ROS_INFO("obstacle slowdown!");
     last_scan_time_ = ros::Time::now();
 }
 

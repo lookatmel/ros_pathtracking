@@ -5,9 +5,26 @@
         <param name="cmd_vel" type="string" value="/cmd_vel" />
         <param name="pannel_id" type="string" value="/pannel" />
         <param name="base_id" type="string" value="/base_link" />
-        <param name="laser_id" type="string" value="/base_scan" />
-        <param name="movebase_polygon" type="string" value="[[0.10,-0.09],[0.10,0.09],[-0.10,0.09],[-0.10,-0.09]]" />
-	<!-- <param name="movebase_polygon" type="string" value="[[0.46,-0.31],[0.46,0.31],[-0.46,0.31],[-0.46,-0.31]]" /> -->
+        <param name="laser_id" type="string" value="/laser" />
+        <param name="movebase_polygon" type="string" value="[[0.66,-0.36],[0.66,0.36],[-0.66,0.36],[-0.66,-0.36]]" />
+        <!-- <param name="movebase_polygon" type="string" value="[[0.46,-0.31],[0.46,0.31],[-0.46,0.31],[-0.46,-0.31]]" /> -->
+        <param name="movebase_polygon2" type="string" value="[[1.26,-0.46],[1.26,0.46],[-1.26,0.46],[-1.26,-0.46]]" />
+
+
+        <param name="obstacle_distance" type="double" value="0.0"/>
+
+        <!-- path param -->
+        <param name="control_frequency" type="int" value="100" />
+        <param name="turn_index" type="double" value="1.0" />
+        <param name="path_err" type="double" value="0.1" />
+        <param name="max_lspeed" type="double" value="0.9" />
+        <param name="min_lspeed" type="double" value="0.01" />
+        <param name="max_aspeed" type="double" value="0.4" />
+        <param name="lacc" type="double" value="0.2" />
+        <param name="ldec" type="double" value="0.2" />
+        <param name="max_lacc" type="double" value="1" />
+        <param name="max_ldec" type="double" value="1" />
+
     </node>
 
 

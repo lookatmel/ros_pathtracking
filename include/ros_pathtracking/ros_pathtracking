@@ -157,7 +157,7 @@ class ROSPathTracking
         int state_;
         unsigned int step_;
         bool tf_rev_;
-        bool have_obstacle_;
+        bool have_obstacle_, have_obstacle2_;
         bool wait_stable_;
         bool moveback_;
         bool scan_ready_;
@@ -174,8 +174,9 @@ class ROSPathTracking
         double max_lacc_, lacc_, max_aacc_, aacc_, max_ldec_, ldec_, max_adec_, adec_;
         double max_lspeed_, min_lspeed_, max_aspeed_, min_aspeed_;
         double motion_lspeed_;
-        uint32_t ctrl_frequency_;
+        int ctrl_frequency_;
         double max_path_err_;
+        double turn_index_;
         struct PointParam
         {
             double length;
@@ -197,8 +198,9 @@ class ROSPathTracking
 
 
         // param
-        std::string movebase_polygon_str_;
+        std::string movebase_polygon_str_, movebase_polygon2_str_;
         std::vector<float*> movebase_polygon_;
+        std::vector<std::vector<float>> movebase_polygon1_, movebase_polygon2_;
         float moveback_distance_;
         float visual_angle_;
         float round_distance_;
